@@ -1,0 +1,33 @@
+name: build
+description: Lint C# code using CSharpier
+
+inputs:
+  restore:
+    description: Whether to restore dotnet tools before linting
+    required: false
+    default: "true"
+  
+runs:
+  using: composite
+  steps:    
+    - name: Roslynator global analyze
+      if: ${{ inputs.restore == 'false' }}
+      shell: bash
+      run: |
+        cd ${{ inputs.app-name }}
+        ls -al
+        echo "installing roslynator tool"
+        dotnet tool install --global roslynator.dotnet.cli
+        which roslynator
+        echo "roslynator analyze this solution"
+        roslynator analyze
+
+    - name: Roslynator tool analyze
+      if: ${{ inputs.restore == 'true' }}
+      shell: bash
+      run: |
+        cd ${{ inputs.app-name }}
+        echo "Restoring project tools"
+        dotnet tool restore
+        dotnet roslynator analyze
+    

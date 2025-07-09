@@ -1,0 +1,41 @@
+name: Lint Node Project
+description: 'Lint a Node.js project using ESLint and upload the results as an artifact'
+
+inputs:
+  lint-command:
+    description: 'Lint command (e.g., npm run lint or npx ng lint)'
+    required: false
+    default: 'npm run lint'
+  working-directory:
+    description: 'Working directory for the lint command'
+    required: false
+    default: '.'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+  continue-on-error:
+    description: 'Continue on error for linting'
+    required: false
+    default: 'true'
+
+
+runs: 
+  using: composite
+  steps:
+    - name: Lint Project (continue on error)
+      if: inputs.continue-on-error == 'true'
+      run: |
+        echo "Running: ${{ inputs.lint-command }} --format json -o eslint-report.json"
+        ${{ inputs.lint-command }} --format json -o eslint-report.json || true
+      working-directory: ${{ inputs.working-directory }}
+      continue-on-error: true
+      shell: bash
+
+    - name: Lint Project (fail on error)
+      if: inputs.continue-on-error != 'true'
+      run: |
+        echo "Running: ${{ inputs.lint-command }} --format json -o eslint-report.json"
+        ${{ inputs.lint-command }} --format json -o eslint-report.json || true
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash

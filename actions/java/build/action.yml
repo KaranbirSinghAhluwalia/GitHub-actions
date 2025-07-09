@@ -1,0 +1,38 @@
+name: Build Java Project
+description: 'Build a Java project and upload build artifacts'
+
+inputs:
+  build-command:
+    description: 'Build command (e.g., mvn clean package)'
+    required: false
+    default: 'mvn clean package'
+  java-version:
+    description: 'Java version to use'
+    required: false
+    default: '17'
+  working-directory:
+    description: 'Working directory for the build command'
+    required: false
+    default: '.'
+  artifact-name:
+    description: 'Name of the uploaded build artifact'
+    required: false
+    default: 'build-artifacts'
+
+runs:
+  using: composite
+  steps:
+    # This step builds the Java project
+    - name: Build Project
+      run: ${{ inputs.build-command }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    # This step uploads the build artifacts
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          target/*.jar
+          target/*.war 

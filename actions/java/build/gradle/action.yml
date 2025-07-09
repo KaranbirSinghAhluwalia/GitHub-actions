@@ -1,0 +1,59 @@
+name: Build Gradle Project
+description: 'Build a Gradle project and deploy build artifacts to GitHub Pages'
+
+inputs:
+  java-version:
+    description: 'Java version to use'
+    required: false
+    default: '17'
+
+  gradle-tasks:
+    description: 'Gradle tasks to run'
+    required: false
+    default: 'build'
+
+  gradle-options:
+    description: 'Additional options for Gradle (e.g., --no-daemon)'
+    required: false
+    default: ''
+
+  working-directory:
+    description: 'Working directory for Gradle'
+    required: false
+    default: '.'
+
+  token:
+    description: 'GitHub token for authentication'
+    required: true
+
+  publish-dir:
+    description: 'Directory to publish to GitHub Pages'
+    required: false
+    default: './build/docs'
+
+runs:
+  using: composite
+  steps:
+    - name: Grant execute permission to Gradle wrapper
+      shell: bash
+      run: chmod +x gradlew
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Build with Gradle
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: ./gradlew ${{ inputs.gradle-tasks }} ${{ inputs.gradle-options }}
+
+    - name: Check if publish directory exists
+      shell: bash
+      run: |
+        if [ ! -d "${{ inputs.publish-dir }}" ]; then
+          echo "Publish directory not found: ${{ inputs.publish-dir }}"
+          exit 1
+        fi
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ inputs.token }}
+        publish_dir: ${{ inputs.publish-dir }}

@@ -1,0 +1,69 @@
+name: Docker Publish to GHCR
+description: 'Build and push a Docker image to GitHub Container Registry (GHCR)'
+
+inputs:
+
+  version:
+    description: 'Version of the Docker image to build and push'
+    required: true
+  context:
+    description: 'Context for docker build'
+    default: '.'
+    required: false
+  docker-file:
+    description: 'Path to the Dockerfile'
+    default: './Dockerfile'
+    required: false
+  push:
+    description: 'Push the image to the registry'
+    default: 'true'
+    required: false
+  token:
+    description: 'GitHub token for authentication to GHCR'
+    required: true
+  registry:
+    description: 'Docker registry to push the image to'
+    required: false
+    default: 'ghcr.io'
+
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Log in to GitHub Container Registry
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+    
+    # Convert repository name to lowercase for consistent tagging
+    - name: Convert repository name to lowercase
+      shell: bash
+      id: repo
+      run: |
+        repo_lower=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+        echo "repo=$repo_lower" >> $GITHUB_OUTPUT
+
+    # Set up Docker metadata and build the image
+    - name: Set up Docker metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ inputs.registry }}/${{ github.repository }}
+    
+
+    # Build and push the Docker image to GitHub Container Registry
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context || '.' }}
+        file: ${{ inputs.docker-file || './Dockerfile' }}
+        push: ${{ inputs.push || false }}
+        labels: ${{ steps.meta.outputs.labels }}
+        tags: |
+          ${{ inputs.registry }}/${{ steps.repo.outputs.repo }}:${{ inputs.version }}

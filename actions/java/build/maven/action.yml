@@ -1,0 +1,43 @@
+name: Build Java Project
+description: 'Build a Java project and deploy the build artifacts to GitHub Pages'
+
+inputs:
+  java-version:
+    description: 'Java version to use'
+    required: false
+    default: '17'
+
+  maven-goals:
+    description: 'Maven goals to run'
+    required: false
+    default: 'clean package'
+
+  maven-options:
+    description: 'Additional options for Maven (e.g., -DskipTests)'
+    required: false
+    default: '-DskipTests'
+
+  working-directory:
+    description: 'Working directory for Maven'
+    required: false
+    default: '.'
+
+  token:
+    description: 'GitHub token for authentication'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # This step sets up the Java environment
+    - name: Build with Maven
+      working-directory: ${{ inputs.working-directory }}
+      run: mvn ${{ inputs.maven-goals }} ${{ inputs.maven-options }}
+      shell: bash
+
+    # This step uploads the build artifacts
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ inputs.token }}
+        publish_dir: ./target/site 

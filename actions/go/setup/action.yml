@@ -1,0 +1,40 @@
+name: Go Setup
+description: Setup go runtime
+
+inputs:
+  go-version:
+    description: Go version to use
+    required: false
+    default: '1.24'
+  git-fetch-depth:
+    description: The depth of the git fetch
+    required: false
+    default: "1"
+  git-fetch-tags:
+    description: Whether to fetch tags from the repository
+    required: false
+    default: "false"
+
+runs:
+  using: 'composite'  
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: ${{ inputs.git-fetch-depth }}
+        fetch-tags: ${{ inputs.git-fetch-tags }}
+      
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Go version
+      shell: bash
+      run: go version
+        
+    - name: Install dependencies and tidy
+      shell: bash
+      run: |
+        go mod download
+        go mod tidy

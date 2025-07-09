@@ -1,0 +1,23 @@
+name: dotnet-build
+description: Setup .NET environment
+
+inputs:
+  app-name: 
+    description: Application name
+    required: true
+  dotnet-version:
+    description: The .NET SDK version to use
+    required: false
+    default: '9.0.300'
+outputs:
+    app-version:
+      description: The version of the application as determined by Versionize 
+      value: ${{ steps.versionize.outputs.app-version }}
+  
+runs:
+  using: composite
+  steps:        
+    - name: dotnet build ${{ inputs.app-name }}
+      shell: bash
+      run: |
+        dotnet build --configuration Release --no-restore

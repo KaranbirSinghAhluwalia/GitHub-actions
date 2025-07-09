@@ -1,0 +1,124 @@
+name: Release Workflow
+  
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      conventional-commit:
+        description: 'Use conventional commit messages to determine the version bump'
+        required: false
+        default: 'true'
+        type: string
+
+      create-release:
+        description: 'Whether to create a GitHub Release'
+        required: false
+        default: 'false'
+        type: string
+      
+      push-to-registry:
+        description: 'Push the Docker image to the registry'
+        required: false
+        default: 'false'
+        type: string
+      
+      run-docker-scan:
+        description: 'Run Docker Scan'
+        required: false
+        default: 'false'
+        type: string
+
+      registry:
+        description: 'Docker registry to push the image (e.g., ghcr.io/org/app)'
+        required: false
+        default: 'ghcr.io'
+        type: string
+
+      run-trivy:
+        description: 'Run Trivy Scan'
+        required: false
+        default: 'true'
+        type: string
+
+      run-grype:
+        description: 'Run Grype Scan'
+        required: false
+        default: 'true'
+        type: string
+
+jobs:
+  # This job handles versioning by generating a new tag based on the commit history
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.generate-tag.outputs.tag }}
+    steps:
+      # This step checks out the code from the repository
+      - id: generate-tag
+        uses: KaranbirSinghAhluwalia/platform-github-actions/.github/actions/common/github-actions/git-tag-generation@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          conventional-commit: 'true'  
+          create-release: 'false'
+
+  # This job publishes the Docker image to GitHub Container Registry (GHCR) if a new tag is generated
+  docker-build-and-push:
+    runs-on: ubuntu-latest
+    needs: version
+    if: ${{ needs.version.outputs.tag != '' && inputs.push-to-registry != 'false' }}
+    permissions:
+      contents: read
+      packages: write  # Required to push to GHCR
+    outputs:
+      tag: ${{ steps.docker-tag.outputs.tag }}
+    steps:
+    # This job builds and publishes a Docker image to GitHub Container Registry (GHCR)
+      - id: docker-tag
+        uses: KaranbirSinghAhluwalia/platform-github-actions/.github/actions/common/docker-build-push@main
+        with:
+          version: ${{ needs.version.outputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ inputs.registry }}
+          conventional-commit: 'true' 
+
+
+  docker-scan:
+    runs-on: ubuntu-latest
+    needs: [version, docker-build-and-push]
+    if: ${{ needs.version.outputs.tag != '' && inputs.run-docker-scan != 'false' }}
+    permissions:
+      contents: read
+      packages: read 
+    steps:
+      # This job scans the Docker image for vulnerabilities using Trivy
+      - uses: KaranbirSinghAhluwalia/platform-github-actions/.github/actions/common/security-scanner/trivy-scan@main
+        if: ${{ inputs.run-trivy == 'true' }}
+        with:
+          version: ${{ needs.version.outputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          severity: 'CRITICAL,HIGH'
+
+      - uses: KaranbirSinghAhluwalia/platform-github-actions/.github/actions/common/github-actions/git-dashboard@main
+        if: ${{ inputs.run-trivy == 'true' }}
+        with:
+          tool: 'Trivy'
+          report: 'trivy-report.txt'
+          critical_keyword: 'CRITICAL'
+          high_keyword: 'HIGH'
+
+      # This job scans the Docker image for vulnerabilities using Grype
+      - uses: KaranbirSinghAhluwalia/platform-github-actions/.github/actions/common/security-scanner/grype-scan@main
+        if: ${{ inputs.run-grype == 'true' }}
+        with:
+          version: ${{ needs.version.outputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: KaranbirSinghAhluwalia/platform-github-actions/.github/actions/common/github-actions/git-dashboard@main
+        if: ${{ inputs.run-grype == 'true' }}
+        with:
+          tool: 'Grype'
+          report: 'grype-report.txt'
+          critical-keyword: 'CRITICAL'
+          high-keyword: 'HIGH'

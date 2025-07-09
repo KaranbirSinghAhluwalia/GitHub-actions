@@ -1,0 +1,184 @@
+name: Auto Version Tag
+description: 'Automatically generate a semantic version tag based on commit messages'
+
+inputs:
+  token:
+    description: 'GitHub token for authentication'
+    required: true
+
+  conventional-commit:
+    description: 'Use conventional commit messages to determine the version bump'
+    required: false
+    default: 'true'
+
+  create-release:
+    description: 'Whether to create a GitHub Release'
+    required: false
+    default: 'false'
+
+outputs:
+  tag:
+    description: "The new semantic version tag"
+    value: ${{ steps.set-output.outputs.tag }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+  # This step sets up Git configuration for the action
+    - name: Setup Git
+      shell: bash
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+     # Determine the Docker tag based on the event type and branch
+    - name: Determine Docker Tag
+      id: docker-tag
+      if: ${{ inputs.conventional-commit != 'true' }}
+      shell: bash
+      run: |
+        DATE=$(date +%Y%m%d)
+        RUN_NUMBER=${{ github.run_number }}
+        
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          TAG="PR${PR_NUMBER}-${DATE}.run${RUN_NUMBER}"
+        elif [[ "${{ github.ref_name }}" == "main" ]]; then
+          TAG="main-${DATE}.run${RUN_NUMBER}"
+        else
+          BRANCH=$(echo "${{ github.ref_name }}" | sed 's|.*/||' | tr '/' '-')
+          TAG="${BRANCH}-${DATE}.run${RUN_NUMBER}"
+        fi
+
+        echo "Computed Docker tag: $TAG"
+        git tag "$TAG"                    
+        git push origin "$TAG"
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+    # This step determines the new tag based on commit messages
+    - name: Determine tag from commits
+      shell: bash
+      if: ${{ inputs.conventional-commit == 'true' }}
+      id: set-tag
+      run: |
+        DEFAULT_VERSION="v0.1.0"
+        git fetch --tags
+
+        LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
+        if [ -z "$LATEST_TAG" ]; then
+          VERSION="0.0.0"
+          RANGE=""
+        else
+          VERSION="${LATEST_TAG#v}"
+          RANGE="$LATEST_TAG..HEAD"
+        fi
+
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+        COMMITS=$(git log $RANGE --pretty=format:"%s")
+        echo "Commit messages in range $RANGE:"
+        echo "$COMMITS"
+
+        BUMP=""
+
+        while IFS= read -r COMMIT; do
+          LOWER=$(echo "$COMMIT" | tr '[:upper:]' '[:lower:]')
+          if [[ "$LOWER" =~ (^|[^a-zA-Z0-9])(major|feat|fix)([:[:space:]]|$) ]]; then
+            FIRST_KEYWORD="${BASH_REMATCH[2]}"
+            case "$FIRST_KEYWORD" in
+              major)
+                BUMP="major"
+                break
+                ;;
+              feat)
+                [[ "$BUMP" != "major" ]] && BUMP="minor"
+                ;;
+              fix)
+                [[ "$BUMP" != "major" && "$BUMP" != "minor" ]] && BUMP="patch"
+                ;;
+            esac
+          fi
+        done <<< "$COMMITS"
+
+        if [ -z "$BUMP" ]; then
+          echo "No valid semantic keyword found. Skipping tag."
+          echo "tag=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        case $BUMP in
+          major)
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            ;;
+          minor)
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            ;;
+          patch)
+            PATCH=$((PATCH + 1))
+            ;;
+        esac
+
+        NEW_TAG="v$MAJOR.$MINOR.$PATCH"
+        MAJOR_TAG="v$MAJOR"
+        PREV_TAG="${LATEST_TAG:-initial commit}"
+        REPO_URL="https://github.com/${{ github.repository }}"
+        RELEASE_DATE=$(date -u +"%B %d, %Y")
+        GIT_HASH=$(git rev-parse --short HEAD)
+
+        CHANGELOG="## $NEW_TAG (from $PREV_TAG)
+
+        Tagged by @github-actions on $RELEASE_DATE
+
+        **Tag**: \`$NEW_TAG\`  
+        **Previous Tag**: \`$PREV_TAG\`  
+        **Commit**: \`$GIT_HASH\`
+
+        ### Changes"
+        # Append commit messages
+        while IFS= read -r COMMIT; do
+          CHANGELOG+="\n- $COMMIT"
+        done <<< "$COMMITS"
+
+        # Append notes and full changelog link
+        CHANGELOG+="\n\n### Notes"
+
+        if [ -n "$LATEST_TAG" ]; then
+          CHANGELOG+="\n\n**Full Changelog → [$NEW_TAG ... $PREV_TAG]($REPO_URL/compare/$LATEST_TAG...$NEW_TAG)**"
+        fi
+
+        echo -e "$CHANGELOG" > changelog.txt
+        git tag "$NEW_TAG"   
+        git tag -f "$MAJOR_TAG"  
+
+        # push both tags; force only the rolling one
+        git push origin --force-with-lease "$NEW_TAG" "$MAJOR_TAG"
+        echo "Pushed tags: $NEW_TAG and $MAJOR_TAG"
+        echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+    # Create a GitHub release if conventional commits are used
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      if: ${{ inputs.conventional-commit == 'true' && inputs.create-release == 'true' }}
+      with:
+        tag_name: ${{ steps.set-tag.outputs.tag }}
+        body_path: changelog.txt
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+
+    # Set the final output tag, prioritizing the conventional commit tag if available
+    - name: Set final output tag
+      id: set-output
+      shell: bash
+      run: |
+        echo "Setting final tag output..."
+        FINAL_TAG="${{ steps.set-tag.outputs.tag || steps.docker-tag.outputs.tag }}"
+        echo "tag=$FINAL_TAG" >> "$GITHUB_OUTPUT"
+
