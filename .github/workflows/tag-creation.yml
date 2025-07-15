@@ -1,0 +1,24 @@
+name: Tag creation Workflow
+  
+on:
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+
+
+jobs:
+  # This job handles versioning by generating a new tag based on the commit history
+  tag-creation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.generate-tag.outputs.tag }}
+    steps:
+      # This step checks out the code from the repository
+      - id: generate-tag
+        uses: KaranbirSinghAhluwalia/GitHub-actions/.github/actions/common/github-actions/git-tag-generation@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          conventional-commit: 'true'
